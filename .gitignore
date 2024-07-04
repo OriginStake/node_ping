@@ -1,0 +1,8 @@
+# Ignore result files
+final_peers_for_validators.txt
+full_peers_log.txt
+sorted_peers.txt
+successful_peers_log.txt
+
+# Ignore any other generated files (you can add more patterns if needed)
+*.log
