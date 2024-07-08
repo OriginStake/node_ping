@@ -1,5 +1,6 @@
 # Node Ping Script (For Validator)
 
+![Result Ping](assets/image.png)
 The Node Ping Script is designed to help you measure the connectivity and latency between your validator node and a list of peers. By running this script, you can determine the peers with the best connection metrics, ensuring optimal performance for your blockchain network.
 
 
