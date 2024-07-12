@@ -83,6 +83,7 @@ LOG_INTERVAL = 10  # Interval for printing log messages during pinging
 
 **Final Result File**
 
+![Result (sorted_peers.txt)](assets/result.png)
 
 The **final_peers_for_validators.txt** file is formatted and ready to be copied into the persistent_peers section in your config.toml file. This file contains the peers with the lowest ping according to the number specified in TOP_N_PEERS.
 
