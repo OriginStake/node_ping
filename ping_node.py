@@ -15,12 +15,6 @@ NUM_PINGS = 3
 MAX_WORKERS = 50
 LOG_INTERVAL = 10
 
-# Initialize the log files
-with open(SUCCESSFUL_PEERS_LOG_FILE, "w") as file:
-    file.write("")
-with open(FULL_PEERS_LOG_FILE, "w") as file:
-    file.write("")
-
 def ping_peer(peer, num_pings=NUM_PINGS):
     id_ip_port = peer.strip()
     try:
@@ -62,102 +56,115 @@ def ping_peer(peer, num_pings=NUM_PINGS):
     else:
         return None, f"Failed - {id_ip_port}"
 
-valid_peers = []
-invalid_peers = []
+def main():
+    # Initialize the log files
+    open(SUCCESSFUL_PEERS_LOG_FILE, "w").close()
+    open(FULL_PEERS_LOG_FILE, "w").close()
 
-# Normalize and process the peer list from file
-with open(PEERS_FILE, "r") as file:
-    raw_peers = file.read()
+    valid_peers = []
+    invalid_peers = []
 
-# Replace newlines with commas and split by commas to handle multiple formats
-normalized_peers = raw_peers.replace("\n", ",").replace(", ", ",").split(",")
+    # Normalize and process the peer list from file
+    with open(PEERS_FILE, "r") as file:
+        raw_peers = file.read()
 
-for peer in normalized_peers:
-    peer = peer.strip()
-    if peer and "@" in peer and ":" in peer.split("@")[1]:
-        valid_peers.append(peer)
-    else:
-        invalid_peers.append(peer)
+    # Replace newlines with commas and split by commas to handle multiple formats
+    normalized_peers = raw_peers.replace("\n", ",").replace(", ", ",").split(",")
 
-if invalid_peers:
-    print("The following peers have invalid formats and will be skipped:")
-    for invalid in invalid_peers:
-        print(f" - {invalid}")
+    for peer in normalized_peers:
+        peer = peer.strip()
+        if peer and "@" in peer and ":" in peer.split("@")[1]:
+            valid_peers.append(peer)
+        else:
+            invalid_peers.append(peer)
 
-with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-    futures = [executor.submit(ping_peer, peer) for peer in valid_peers]
-    results = []
-    for idx, future in tqdm(enumerate(concurrent.futures.as_completed(futures)), total=len(futures)):
-        try:
-            result = future.result()
-            results.append(result)
-            if idx % LOG_INTERVAL == 0 and result[0] is not None:
-                print(f"{result[0]}: Connected successfully, average response time: {result[1].split()[0]}")
-        except Exception as e:
-            print(f"Error processing a peer: {e}")
+    if invalid_peers:
+        print("The following peers have invalid formats and will be skipped:")
+        for invalid in invalid_peers:
+            print(f" - {invalid}")
 
-with open(SUCCESSFUL_PEERS_LOG_FILE, "w") as log_file:
-    for result in results:
-        if result[0] is not None:
-            log_file.write(result[0] + ",")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(ping_peer, peer) for peer in valid_peers]
+        results = []
+        for idx, future in tqdm(enumerate(concurrent.futures.as_completed(futures)), total=len(futures)):
+            try:
+                result = future.result()
+                results.append(result)
+                if idx % LOG_INTERVAL == 0 and result[0] is not None:
+                    print(f"{result[0]}: Connected successfully, average response time: {result[1].split()[0]}")
+            except Exception as e:
+                print(f"Error processing a peer: {e}")
 
-with open(FULL_PEERS_LOG_FILE, "w") as full_log_file:
-    for result in results:
-        full_log_file.write(result[1] + "\n")
+    with open(SUCCESSFUL_PEERS_LOG_FILE, "w") as log_file:
+        for result in results:
+            if result[0] is not None:
+                log_file.write(result[0] + ",")
 
-# Process and sort ping data
-with open(FULL_PEERS_LOG_FILE, 'r') as file:
-    lines = file.readlines()
+    with open(FULL_PEERS_LOG_FILE, "w") as full_log_file:
+        for result in results:
+            full_log_file.write(result[1] + "\n")
+            print(f"Debug: Writing to log: {result[1]}")  # Debug line
 
-ping_data = []
-for line in lines:
-    ping, node = line.strip().split(' - ')
-    if ping == "Failed":
-        ping_data.append((float('inf'), node))  # Use 'inf' to treat failed nodes as last
-    elif "ms" in ping:
-        try:
-            ping_ms = int(ping.replace('ms', '').strip())
-            ping_data.append((ping_ms, node))
-        except ValueError:
-            ping_data.append((float('inf'), node))
+    # Process and sort ping data
+    with open(FULL_PEERS_LOG_FILE, 'r') as file:
+        lines = file.readlines()
 
-# Sort the data
-sorted_ping_data = sorted(ping_data, key=lambda x: x[0])
+    ping_data = []
+    for line in lines:
+        parts = line.strip().split(' - ', 1)  # Split on first occurrence of ' - '
+        if len(parts) == 2:
+            ping, node = parts
+            if ping == "Failed":
+                ping_data.append((float('inf'), node))  # Use 'inf' to treat failed nodes as last
+            elif "ms" in ping:
+                try:
+                    ping_ms = int(ping.replace('ms', '').strip())
+                    ping_data.append((ping_ms, node))
+                except ValueError:
+                    ping_data.append((float('inf'), node))
+        else:
+            print(f"Skipping malformed line: {line.strip()}")
 
-# Filter the top N nodes
-top_n_nodes = sorted_ping_data[:TOP_N_PEERS]
-nodes_below_100 = [(ping, node) for ping, node in sorted_ping_data if ping < 100]
-nodes_below_200 = [(ping, node) for ping, node in sorted_ping_data if ping < 200]
+    # Sort the data
+    sorted_ping_data = sorted(ping_data, key=lambda x: x[0])
 
-count_below_100 = len(nodes_below_100)
-count_below_200 = len(nodes_below_200)
-count_above_200 = sum(1 for ping, _ in sorted_ping_data if ping >= 200)
-count_failed = sum(1 for ping, _ in ping_data if ping == float('inf'))
-total_nodes = len(ping_data)
+    # Filter the top N nodes
+    top_n_nodes = sorted_ping_data[:TOP_N_PEERS]
+    nodes_below_100 = [(ping, node) for ping, node in sorted_ping_data if ping < 100]
+    nodes_below_200 = [(ping, node) for ping, node in sorted_ping_data if ping < 200]
 
-# Write sorted data to the log file
-with open(SORTED_PEERS_FILE, 'w') as file:
-    file.write(f"Top {TOP_N_PEERS} nodes with the lowest ping:\n")
-    for ping, node in top_n_nodes:
-        file.write(f"{ping}ms - {node}\n")
+    count_below_100 = len(nodes_below_100)
+    count_below_200 = len(nodes_below_200)
+    count_above_200 = sum(1 for ping, _ in sorted_ping_data if ping >= 200)
+    count_failed = sum(1 for ping, _ in ping_data if ping == float('inf'))
+    total_nodes = len(ping_data)
 
-    file.write(f"\nNodes with ping below 100ms: {count_below_100}/{total_nodes} ({count_below_100/total_nodes*100:.2f}%)\n")
-    for ping, node in nodes_below_100:
-        file.write(f"{ping}ms - {node}\n")
+    # Write sorted data to the log file
+    with open(SORTED_PEERS_FILE, 'w') as file:
+        file.write(f"Top {TOP_N_PEERS} nodes with the lowest ping:\n")
+        for ping, node in top_n_nodes:
+            file.write(f"{ping}ms - {node}\n")
 
-    file.write(f"\nNodes with ping below 200ms: {count_below_200}/{total_nodes} ({count_below_200/total_nodes*100:.2f}%)\n")
-    for ping, node in nodes_below_200:
-        file.write(f"{ping}ms - {node}\n")
+        file.write(f"\nNodes with ping below 100ms: {count_below_100}/{total_nodes} ({count_below_100/total_nodes*100:.2f}%)\n")
+        for ping, node in nodes_below_100:
+            file.write(f"{ping}ms - {node}\n")
 
-    file.write(f"\nNodes with ping above 200ms: {count_above_200}/{total_nodes} ({count_above_200/total_nodes*100:.2f}%)\n")
+        file.write(f"\nNodes with ping below 200ms: {count_below_200}/{total_nodes} ({count_below_200/total_nodes*100:.2f}%)\n")
+        for ping, node in nodes_below_200:
+            file.write(f"{ping}ms - {node}\n")
 
-    file.write(f"\nFailed nodes: {count_failed}/{total_nodes} ({count_failed/total_nodes*100:.2f}%)\n")
+        file.write(f"\nNodes with ping above 200ms: {count_above_200}/{total_nodes} ({count_above_200/total_nodes*100:.2f}%)\n")
 
-with open(FINAL_PEERS_FILE, 'w') as file:
-    file.write(','.join(node for _, node in top_n_nodes))
+        file.write(f"\nFailed nodes: {count_failed}/{total_nodes} ({count_failed/total_nodes*100:.2f}%)\n")
 
-print(f"Top {TOP_N_PEERS} nodes with the lowest ping: {len(top_n_nodes)}/{total_nodes} ({len(top_n_nodes)/total_nodes*100:.2f}%)")
-print(f"Nodes with ping below 100ms: {count_below_100}/{total_nodes} ({count_below_100/total_nodes*100:.2f}%)")
-print(f"Nodes with ping below 200ms: {count_below_200}/{total_nodes} ({count_below_200/total_nodes*100:.2f}%)")
-print(f"Nodes with ping above 200ms: {count_above_200}/{total_nodes} ({count_above_200/total_nodes*100:.2f}%)")
-print(f"Failed nodes: {count_failed}/{total_nodes} ({count_failed/total_nodes*100:.2f}%)")
+    with open(FINAL_PEERS_FILE, 'w') as file:
+        file.write(','.join(node for _, node in top_n_nodes))
+
+    print(f"Top {TOP_N_PEERS} nodes with the lowest ping: {len(top_n_nodes)}/{total_nodes} ({len(top_n_nodes)/total_nodes*100:.2f}%)")
+    print(f"Nodes with ping below 100ms: {count_below_100}/{total_nodes} ({count_below_100/total_nodes*100:.2f}%)")
+    print(f"Nodes with ping below 200ms: {count_below_200}/{total_nodes} ({count_below_200/total_nodes*100:.2f}%)")
+    print(f"Nodes with ping above 200ms: {count_above_200}/{total_nodes} ({count_above_200/total_nodes*100:.2f}%)")
+    print(f"Failed nodes: {count_failed}/{total_nodes} ({count_failed/total_nodes*100:.2f}%)")
+
+if __name__ == "__main__":
+    main()
